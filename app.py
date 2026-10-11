@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from spreadsheets import preview as spreadsheet_preview
 from reconciliation import reconcile, reconcile_profile
-from inventory_profiles import DEFAULT_PROFILE, SCALA_PROFILE, validate_profile, custom_values, profile_identifier, column_value
+from inventory_profiles import DEFAULT_PROFILE, SCALA_PROFILE, validate_profile, custom_values, profile_identifier, column_value, normalize_template_row
 from exports import network_xlsx, equipment_xlsx, network_pdf, equipment_pdf
 
 ROOT = Path(__file__).resolve().parent
@@ -435,7 +435,11 @@ def workspace_overview():
             (SELECT COUNT(*) FROM equipment) AS inventory_total,
             (SELECT COUNT(DISTINCT NULLIF(location,'')) FROM equipment) AS inventory_locations,
             (SELECT COUNT(*) FROM equipment_inventories) AS inventory_count""").fetchone()
-        return dict(row)
+        result=dict(row)
+        inventories=[equipment_inventory_details(con,r['id']) for r in con.execute('SELECT id FROM equipment_inventories')]
+        storage_ids={record['id'] for record in inventories if record.get('layout',{}).get('location_role','geographic' if 'scala' in record['name'].casefold() else 'storage')=='storage'}
+        result['inventory_locations']=len({r['location'] for r in con.execute('SELECT inventory_id,location FROM equipment') if r['inventory_id'] in storage_ids and r['location']})
+        return result
 
 
 def save_equipment_inventory(value, inventory_id=None):
@@ -484,6 +488,7 @@ def save_equipment(value, item_id=None):
         con.execute('BEGIN IMMEDIATE')
         profile = equipment_inventory_details(con, inventory_id).get('layout', DEFAULT_PROFILE)
         values = custom_values(value.get('custom_values'), profile)
+        row=normalize_template_row(dict(row,custom_values=values),profile)
         identifier = profile_identifier(dict(row,custom_values=values), profile)
         if identifier and any(profile_identifier(equipment_record(saved),profile)==identifier for saved in con.execute('SELECT * FROM equipment WHERE inventory_id=? AND id!=?',(inventory_id,item_id or 0))):
             raise ValueError('This item identifier already exists in this inventory.')
@@ -622,9 +627,11 @@ def import_equipment(payload):
         if blank_import_row(value, EQUIPMENT_FIELDS) and not (isinstance(value,dict) and value.get('custom_values')):
             continue
         try:
-            rows.append(dict(validate_equipment(value), item_confirmed=equipment_import_confirmation(value),custom_values=custom_values(value.get('custom_values'),profile)))
+            rows.append(normalize_template_row(dict(validate_equipment(value), item_confirmed=equipment_import_confirmation(value),custom_values=custom_values(value.get('custom_values'),profile)),profile))
         except ValueError as exc:
             raise ValueError(f'Inventory row {index}: {exc} Nothing was imported.') from None
+    zero_count=sum(profile.get('stock_mode')=='tv_counts' and row['quantity']==0 for row in rows)
+    rows=[row for row in rows if not (profile.get('stock_mode')=='tv_counts' and row['quantity']==0)]
     custom_ids = [identity for row in rows if (identity := profile_identifier(row,profile)) is not None]
     if len(custom_ids)!=len(set(custom_ids)):
         raise ValueError('Repeated item identifiers in this file. Nothing was imported.')
@@ -652,7 +659,9 @@ def import_equipment(payload):
             if custom_id: existing_custom.add(custom_id)
             if identity is not None:
                 existing.add(identity)
-    return {'added': added, 'skipped': len(rows)-added}
+    result={'added': added, 'skipped': len(rows)-added+zero_count}
+    if zero_count:result['skipped_zero']=zero_count
+    return result
 
 
 def equipment_csv(rows=None, layout=None):
@@ -803,6 +812,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/devices':
                 return self.send(200, {'devices': inventory()})
             assets = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/style.css': ('style.css', 'text/css'), '/equipment.js': ('equipment.js', 'text/javascript'), '/icon.svg': ('icon.svg', 'image/svg+xml'), '/favicon.svg': ('favicon.svg', 'image/svg+xml'), '/example-switcher.png': ('example-switcher.png', 'image/png'), '/fonts/Poppins-Regular.woff2': ('fonts/Poppins-Regular.woff2', 'font/woff2'), '/fonts/Poppins-Medium.woff2': ('fonts/Poppins-Medium.woff2', 'font/woff2'), '/fonts/Poppins-SemiBold.woff2': ('fonts/Poppins-SemiBold.woff2', 'font/woff2'), '/fonts/Poppins-Bold.woff2': ('fonts/Poppins-Bold.woff2', 'font/woff2')}
+            assets['/inventory-templates.json'] = ('inventory-templates.json', 'application/json')
             assets['/inventory-columns.js'] = ('inventory-columns.js', 'text/javascript')
             assets['/import-review.js'] = ('import-review.js', 'text/javascript')
             assets['/inventory'] = ('index.html', 'text/html')
@@ -815,7 +825,9 @@ class Handler(BaseHTTPRequestHandler):
                            for family in ('SpaceGrotesk', 'DMSans', 'JetBrainsMono')})
             if path in assets:
                 file, mime = assets[path]
-                return self.send(200, (ROOT / 'static' / file).read_bytes(), mime + '; charset=utf-8' if mime.startswith('text/') or mime == 'image/svg+xml' else mime)
+                data=(ROOT / 'static' / file).read_bytes()
+                if mime=='application/json':data=json.loads(data)
+                return self.send(200, data, mime + '; charset=utf-8' if mime.startswith('text/') or mime == 'image/svg+xml' else mime)
         elif self.command == 'POST' and path == '/api/equipment/inventories':
             return self.send(201, save_equipment_inventory(self.body()))
         elif self.command == 'PUT' and path.startswith('/api/equipment/inventories/'):

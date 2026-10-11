@@ -642,3 +642,14 @@ main, dialog {
 .equipment-filters:has(.equipment-status-group[hidden]) > .equipment-search-group { grid-column: 2; }
 .equipment-filters:has(.equipment-status-group[hidden]):has(.equipment-location-group[hidden]) { grid-template-columns: minmax(0,1fr); }
 .equipment-filters:has(.equipment-status-group[hidden]):has(.equipment-location-group[hidden]) > .equipment-search-group { grid-column: 1; grid-row: 1; }
+
+/* Template controls fit the shared desktop inventory row height. */
+.equipment-status .ip-confirm{margin:0;min-height:28px;padding:4px 8px;white-space:nowrap;font-size:10px}
+.equipment-status .ip-confirm.pending{background:#302817;border-color:#9b782f;color:#ffdc85}
+.inventory-calculated input{background:var(--panel);font-weight:600;cursor:default}
+#equipment-template-description{display:block;margin-top:8px;line-height:1.6;color:var(--muted)}
+#equipment-dialog .inventory-value-input textarea{width:100%;min-height:38px}
+#equipment-dialog .inventory-value-input select{flex:1;min-width:0}
+#equipment-zero-label{margin:0;min-height:40px;gap:8px}
+
+#equipment-table .choice-button{height:30px;min-height:30px;padding:4px 8px;font-size:11px;white-space:nowrap;line-height:18px}

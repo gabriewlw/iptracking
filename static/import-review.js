@@ -1,10 +1,10 @@
 /* Inventory import review keeps several editable rows from one location together. */
-function reviewEquipmentBatch(entries, index, total, inventory, fields, filename) {
+function reviewEquipmentBatch(entries, index, total, inventory, fields, filename, locations = []) {
   return new Promise(resolve => {
     const dialog = $('inventory-import-review');
     let saving = false, finished = false;
     const outcomes = [];
-    $('inventory-import-review-title').textContent = `Review ${entries[0].row.location || 'unassigned location'}`;
+    $('inventory-import-review-title').textContent = inventory.layout?.stock_mode==='tv_counts'?'Review TV models':`Review ${entries[0].row.location || 'unassigned location'}`;
     $('inventory-import-review-progress').textContent = `${filename} · ${inventory.name} · ${entries[0].locationProgress.split(' · ').slice(0,2).join(' · ')} · ${entries.length} rows on this screen · ${total} source rows`;
     const head = element('tr');
     ['Select / source row', ...fields.map(([key,label]) => label.replace(' (optional)','')+(key==='orientation'?' (optional)':'')), 'Result'].forEach(label => {
@@ -24,8 +24,8 @@ function reviewEquipmentBatch(entries, index, total, inventory, fields, filename
         const cell=element('td');
         const column=inventory.layout?.columns.find(column=>column.key===key);
         let control;
-        if (!inventoryBaseFields.has(key) && column) {
-          const input=inventoryInput(column,inventoryValue(entry.row,key),{allowClear:key!=='orientation'});
+        if (column) {
+          const input=inventoryInput(column,inventoryValue(entry.row,key),{allowClear:key!=='orientation',locations});
           cell.append(input.wrapper);control=input.control;
           input.wrapper.querySelectorAll('button').forEach(button=>button.setAttribute('aria-label',`${button.textContent} for row ${entry.number}`));
         } else {
@@ -38,6 +38,8 @@ function reviewEquipmentBatch(entries, index, total, inventory, fields, filename
         control.setAttribute('aria-label',`${label.replace(' (optional)','')}, row ${entry.number}`);
         controls.set(key,control);row.append(cell);
       });
+      const calculate=()=>{const values={...entry.row,custom_values:{...entry.row.custom_values}};controls.forEach((input,key)=>{if(inventoryBaseFields.has(key))values[key]=input.value;else values.custom_values[key]=input.value;});const calculated=inventoryCalculate(values,inventory.layout || defaultInventoryLayout);(inventory.layout?.columns || []).filter(col=>col.type==='calculated').forEach(col=>{controls.get(col.key).value=inventoryValue(calculated,col.key);});};
+      controls.forEach(control=>control.addEventListener('change',calculate));calculate();
       const status=element('td','batch-row-result','Awaiting review');status.setAttribute('role','status');row.append(status);
       check.onchange=updateSelection;
       return {entry,row,check,flags,controls,status,done:false};
@@ -63,6 +65,7 @@ function reviewEquipmentBatch(entries, index, total, inventory, fields, filename
       const row={...state.entry.row,custom_values:{...state.entry.row.custom_values}};
       state.controls.forEach((control,key)=>{if(inventoryBaseFields.has(key))row[key]=control.value.trim();else row.custom_values[key]=control.value.trim();});
       row.location=cleanVenue(row.location);
+      const calculated=inventoryCalculate(row,inventory.layout || defaultInventoryLayout);Object.assign(row,calculated);
       state.entry.row=row;
       state.entry.issues=[...equipmentIssues(row),...state.entry.issues.filter(issue=>issue.startsWith('Repeated '))];
       state.flags.textContent=state.entry.issues.join(' · ');state.flags.hidden=!state.entry.issues.length;
@@ -83,6 +86,7 @@ function reviewEquipmentBatch(entries, index, total, inventory, fields, filename
       try {
         for(const state of selected) {
           const row=editedRow(state);
+          if(inventory.layout?.stock_mode==='tv_counts'&&row.quantity===0){complete(state,{skippedRow:true});state.status.textContent='Zero total · skipped';continue;}
           if(!meaningfulImportRow(row)){complete(state,{skippedRow:true});continue;}
           state.status.textContent='Importing…';
           try {
@@ -93,7 +97,7 @@ function reviewEquipmentBatch(entries, index, total, inventory, fields, filename
           }
         }
       } finally {
-        saving=false;states.filter(state=>!state.done).forEach(state=>state.row.querySelectorAll('input,select,textarea,button').forEach(control=>{control.disabled=false;}));
+        saving=false;states.filter(state=>!state.done).forEach(state=>state.row.querySelectorAll('input,select,textarea,button').forEach(control=>{control.disabled=false;if(control.dataset.columnKey && inventory.layout?.columns.some(col=>col.key===control.dataset.columnKey&&col.type==='calculated'))control.readOnly=true;}));
         updateSelection();if(states.every(state=>state.done))finish();
       }
     };

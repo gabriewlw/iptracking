@@ -1,0 +1,863 @@
+[
+  {
+    "id": "spare_parts",
+    "name": "Spare Parts",
+    "description": "Stock, locker locations and physical location checks.",
+    "layout": {
+      "columns": [
+        {
+          "key": "description",
+          "label": "Description",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": []
+        },
+        {
+          "key": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "quantity",
+          "label": "Quantity",
+          "type": "count",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "location",
+          "label": "Location",
+          "type": "location",
+          "important": true,
+          "filter": "buttons",
+          "options": []
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "serial_number",
+      "identifier": "",
+      "show_status": true,
+      "location_role": "storage",
+      "template": "spare_parts"
+    }
+  },
+  {
+    "id": "scala",
+    "name": "Scala",
+    "description": "Digital signage: one Scala per geographical location. No serial number or located status.",
+    "layout": {
+      "columns": [
+        {
+          "key": "asset_id",
+          "label": "Scala ID",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": [],
+          "aliases": [
+            "ID",
+            "Asset ID",
+            "Scala ID",
+            "STB ID",
+            "Laptop ID",
+            "Display ID"
+          ]
+        },
+        {
+          "key": "location",
+          "label": "Location",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "monitor_brand",
+          "label": "Monitor Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": [],
+          "aliases": [
+            "Monitor Brand",
+            "Screen Brand",
+            "Brand"
+          ]
+        },
+        {
+          "key": "monitor_model",
+          "label": "Monitor Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": [],
+          "aliases": [
+            "Monitor Model",
+            "Screen Model",
+            "Model"
+          ]
+        },
+        {
+          "key": "screen_size",
+          "label": "Size (inch)",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": [],
+          "aliases": [
+            "Size",
+            "Size (inch)",
+            "Screen Size",
+            "Size (inches)"
+          ]
+        },
+        {
+          "key": "orientation",
+          "label": "Orientation",
+          "type": "buttons",
+          "important": false,
+          "filter": "dropdown",
+          "options": [
+            "Vertical",
+            "Horizontal"
+          ]
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "asset_id",
+      "identifier": "asset_id",
+      "show_status": false,
+      "location_role": "geographic",
+      "template": "scala"
+    }
+  },
+  {
+    "id": "tv",
+    "name": "TV",
+    "description": "Spare TVs grouped by brand and model. Deck counts add up automatically; zero-stock rows are skipped on import.",
+    "layout": {
+      "columns": [
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": []
+        },
+        {
+          "key": "deck_6",
+          "label": "Deck 6",
+          "type": "count",
+          "important": true,
+          "filter": "none",
+          "options": [],
+          "minimum": 0,
+          "aliases": [
+            "Deck 6",
+            "Deck6"
+          ]
+        },
+        {
+          "key": "deck_2_port",
+          "label": "Deck 2 Port",
+          "type": "count",
+          "important": true,
+          "filter": "none",
+          "options": [],
+          "minimum": 0,
+          "aliases": [
+            "Deck 2 Port",
+            "Deck2 Port"
+          ]
+        },
+        {
+          "key": "deck_2_stbd",
+          "label": "Deck 2 Stbd",
+          "type": "count",
+          "important": true,
+          "filter": "none",
+          "options": [],
+          "minimum": 0,
+          "aliases": [
+            "Deck 2 Stbd",
+            "Deck 2 Stb",
+            "Deck 2 Starboard"
+          ]
+        },
+        {
+          "key": "total_count",
+          "label": "Total count",
+          "type": "calculated",
+          "important": false,
+          "filter": "none",
+          "options": [],
+          "sources": [
+            "deck_6",
+            "deck_2_port",
+            "deck_2_stbd"
+          ],
+          "aliases": [
+            "Total count",
+            "Total",
+            "Total quantity"
+          ]
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "model",
+      "identifier": "",
+      "show_status": false,
+      "location_role": "none",
+      "stock_mode": "tv_counts",
+      "template": "tv"
+    }
+  },
+  {
+    "id": "amx",
+    "name": "AMX",
+    "description": "Suggested columns for controllers and touch panels.",
+    "layout": {
+      "columns": [
+        {
+          "key": "asset_id",
+          "label": "AMX ID",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": [],
+          "aliases": [
+            "ID",
+            "Asset ID",
+            "Scala ID",
+            "STB ID",
+            "Laptop ID",
+            "Display ID"
+          ]
+        },
+        {
+          "key": "device_type",
+          "label": "Device type",
+          "type": "select",
+          "important": true,
+          "filter": "none",
+          "options": [
+            "Controller",
+            "Touch panel",
+            "Interface",
+            "Other"
+          ]
+        },
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": []
+        },
+        {
+          "key": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "ip_address",
+          "label": "IP address",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "location",
+          "label": "Location",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "serial_number",
+      "identifier": "",
+      "show_status": true,
+      "location_role": "geographic",
+      "template": "amx"
+    }
+  },
+  {
+    "id": "planar",
+    "name": "Planar",
+    "description": "Sports bar wall: four quadrants with four screens in each quadrant.",
+    "layout": {
+      "columns": [
+        {
+          "key": "asset_id",
+          "label": "Display ID",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": [],
+          "aliases": [
+            "ID",
+            "Asset ID",
+            "Scala ID",
+            "STB ID",
+            "Laptop ID",
+            "Display ID"
+          ]
+        },
+        {
+          "key": "quadrant",
+          "label": "Quadrant",
+          "type": "select",
+          "important": true,
+          "filter": "buttons",
+          "options": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ]
+        },
+        {
+          "key": "screen_position",
+          "label": "Screen in quadrant",
+          "type": "select",
+          "important": true,
+          "filter": "none",
+          "options": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ]
+        },
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": []
+        },
+        {
+          "key": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "screen_size",
+          "label": "Size (inch)",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": [],
+          "aliases": [
+            "Size",
+            "Size (inch)",
+            "Screen Size",
+            "Size (inches)"
+          ]
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "asset_id",
+      "identifier": "asset_id",
+      "show_status": false,
+      "location_role": "none",
+      "template": "planar"
+    }
+  },
+  {
+    "id": "tvro",
+    "name": "TVRO",
+    "description": "Satellite receivers, antennas and associated spare parts.",
+    "layout": {
+      "columns": [
+        {
+          "key": "description",
+          "label": "Description",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "part_type",
+          "label": "Part type",
+          "type": "select",
+          "important": true,
+          "filter": "dropdown",
+          "options": [
+            "Antenna",
+            "LNB",
+            "Receiver",
+            "Modem",
+            "Cable",
+            "Other"
+          ]
+        },
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": []
+        },
+        {
+          "key": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "quantity",
+          "label": "Quantity",
+          "type": "count",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "location",
+          "label": "Location",
+          "type": "location",
+          "important": true,
+          "filter": "buttons",
+          "options": []
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "serial_number",
+      "identifier": "",
+      "show_status": true,
+      "location_role": "storage",
+      "template": "tvro"
+    }
+  },
+  {
+    "id": "daktronics",
+    "name": "Daktronics",
+    "description": "LED wall and VIP display equipment.",
+    "layout": {
+      "columns": [
+        {
+          "key": "asset_id",
+          "label": "Asset ID",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": [],
+          "aliases": [
+            "ID",
+            "Asset ID",
+            "Scala ID",
+            "STB ID",
+            "Laptop ID",
+            "Display ID"
+          ]
+        },
+        {
+          "key": "display_area",
+          "label": "Display area",
+          "type": "select",
+          "important": true,
+          "filter": "buttons",
+          "options": [
+            "LED Wall",
+            "VIP",
+            "Other"
+          ]
+        },
+        {
+          "key": "description",
+          "label": "Description",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": []
+        },
+        {
+          "key": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "location",
+          "label": "Location",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "asset_id",
+      "identifier": "asset_id",
+      "show_status": true,
+      "location_role": "geographic",
+      "template": "daktronics"
+    }
+  },
+  {
+    "id": "laptops",
+    "name": "Presentation Laptop Inventories",
+    "description": "Presentation laptops and their assigned locations.",
+    "layout": {
+      "columns": [
+        {
+          "key": "asset_id",
+          "label": "Laptop ID",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": [],
+          "aliases": [
+            "ID",
+            "Asset ID",
+            "Scala ID",
+            "STB ID",
+            "Laptop ID",
+            "Display ID"
+          ]
+        },
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": []
+        },
+        {
+          "key": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "computer_name",
+          "label": "Computer name",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "location",
+          "label": "Location",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "asset_id",
+      "identifier": "asset_id",
+      "show_status": true,
+      "location_role": "geographic",
+      "template": "laptops"
+    }
+  },
+  {
+    "id": "projectors",
+    "name": "Projectors",
+    "description": "Mounted and portable projectors onboard.",
+    "layout": {
+      "columns": [
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": []
+        },
+        {
+          "key": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "installation",
+          "label": "Installation",
+          "type": "buttons",
+          "important": true,
+          "filter": "buttons",
+          "options": [
+            "Mounted",
+            "Portable"
+          ]
+        },
+        {
+          "key": "location",
+          "label": "Location",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "lamp_hours",
+          "label": "Lamp hours",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "serial_number",
+      "identifier": "",
+      "show_status": true,
+      "location_role": "geographic",
+      "template": "projectors"
+    }
+  },
+  {
+    "id": "stbs",
+    "name": "STBs",
+    "description": "Set-top boxes, addresses and installation locations.",
+    "layout": {
+      "columns": [
+        {
+          "key": "asset_id",
+          "label": "STB ID",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": [],
+          "aliases": [
+            "ID",
+            "Asset ID",
+            "Scala ID",
+            "STB ID",
+            "Laptop ID",
+            "Display ID"
+          ]
+        },
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "important": true,
+          "filter": "dropdown",
+          "options": []
+        },
+        {
+          "key": "serial_number",
+          "label": "Serial Number",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "ip_address",
+          "label": "IP address",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "location",
+          "label": "Location",
+          "type": "text",
+          "important": true,
+          "filter": "none",
+          "options": []
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "text",
+          "important": false,
+          "filter": "none",
+          "options": []
+        }
+      ],
+      "primary_search": "serial_number",
+      "identifier": "",
+      "show_status": true,
+      "location_role": "geographic",
+      "template": "stbs"
+    }
+  }
+]

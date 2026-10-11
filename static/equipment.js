@@ -94,7 +94,7 @@
     }
   }
   function renderEquipment() {
-    updatePageSummary(items, inventories.find(inventory => inventory.id === inventoryId)?.name || 'Equipment inventory');
+    updatePageSummary(items, inventories.find(inventory => inventory.id === inventoryId)?.name || 'Equipment inventory',layout());
 
     renderInventoryColumns();
     renderLocationButtons();
@@ -108,7 +108,7 @@
       document.createTextNode(`${items.filter(i => !i.data_checked).length} records not checked · `),
       flaggedCount ? flaggedLink : document.createTextNode('0 flagged'),
       document.createTextNode(showLocatedStatus() ? ` · ${items.filter(i => !i.item_confirmed).length} locations not confirmed` : ''));
-    const results = items.filter(item => [...fields.map(field=>item[field]),...Object.values(item.custom_values || {}),
+    const results = items.filter(item => (layout().stock_mode!=='tv_counts'||$('equipment-show-zero').checked||item.quantity!==0) && [...fields.map(field=>item[field]),...Object.values(item.custom_values || {}),
       ...(showLocatedStatus() ? [item.item_confirmed ? 'Located' : 'Not located'] : []),
       item.data_checked ? 'Record checked' : equipmentIssues(item).length ? 'Check flagged record' : 'Check record'
     ].some(value => String(value ?? '').toLowerCase().includes(query)) &&
@@ -123,8 +123,14 @@
     visibleItems = results;
     const availableIds = new Set(results.map(item => item.id));
     for (const id of selectedItems) if (!availableIds.has(id)) selectedItems.delete(id);
+    const storage=layout().location_role!=='geographic' && layout().location_role!=='none' && !currentInventory().name.toLowerCase().includes('scala');
+    $('equipment-locations').closest('div').hidden=!storage;
+    $('equipment-manage-locations').hidden=!storage;
+    $('equipment-zero-label').hidden=layout().stock_mode!=='tv_counts';
+    document.querySelector('.equipment-stats').style.gridTemplateColumns=`repeat(${2+Number(storage)+Number(showLocatedStatus())},minmax(0,1fr))`;
+    if(!displayColumns().some(col=>col.key==='quantity'||col.type==='count'||col.type==='calculated')){$('equipment-units').textContent=items.length;}
     $('equipment-records').textContent = items.length;
-    $('equipment-units').textContent = items.reduce((total,item) => total + (item.quantity ?? 0), 0);
+    $('equipment-units').textContent = displayColumns().some(col=>col.key==='quantity'||col.type==='count'||col.type==='calculated')?items.reduce((total,item) => total + (item.quantity ?? 0), 0):items.length;
     $('equipment-units').title = 'Sum of known quantities; blank quantities are not counted.';
     $('equipment-locations').textContent = new Set(items.map(i => i.location).filter(Boolean)).size;
     $('equipment-found').textContent = items.filter(item => item.item_confirmed).length;
@@ -149,11 +155,11 @@
           }), element('span', '', inventoryValue(item,field)));
           cell.replaceChildren(value);
         }
-        if(!inventoryBaseFields.has(field)&&(field==='orientation'||['checkbox','buttons','select'].includes(column.type))){
+        if((!inventoryBaseFields.has(field)||field==='quantity')&&(field==='orientation'||['checkbox','buttons','select','count'].includes(column.type))){
           const {wrapper,control}=inventoryInput(column,inventoryValue(item,field));wrapper.classList.add('inventory-cell-controls');
           control.onchange=async()=>{
             if(pendingConfirmations.has(item.id))return;
-            const write=api(`/api/equipment/${item.id}`,'PUT',{...item,custom_values:{...item.custom_values,[field]:control.value}});
+            const write=api(`/api/equipment/${item.id}`,'PUT',inventoryBaseFields.has(field)?{...item,[field]:control.value}:{...item,custom_values:{...item.custom_values,[field]:control.value}});
             pendingConfirmations.set(item.id,write);wrapper.querySelectorAll('input,button,select').forEach(node=>{node.disabled=true;});
             try{const updated=await write;items=items.map(record=>record.id===updated.id?updated:record);}
             catch(error){toast('Could not update '+column.label+': '+error.message);}
@@ -162,6 +168,7 @@
           cell.replaceChildren(wrapper);
           if(index===0){wrapper.prepend(selectionControl(item.id,`equipment ${displayName(item)}`,selectedItems,updateEquipmentSelection));}
         }
+        if(field==='location'&&column.type==='location'&&inventoryValue(item,field)){const button=element('button','choice-button',item.location);button.type='button';colorVenueButton(button,item.location);button.onclick=()=>{$('equipment-location-filter').value=item.location;renderEquipment();};cell.replaceChildren(button);}
         cell.title = String(inventoryValue(item,field));
         cell.dataset.label = column.label; row.append(cell);
         if (index === displayColumns().length-1) {
@@ -203,7 +210,7 @@
             } catch(error) { toast('Could not update located status: ' + error.message); }
             finally { pendingConfirmations.delete(item.id); renderEquipment(); }
           };
-          status.append(control); row.append(status);
+          if(layout().template){const button=element('button',`ip-confirm${item.item_confirmed?' confirmed':' pending'}`,item.item_confirmed?'Located':'Not located');button.type='button';button.disabled=check.disabled;button.setAttribute('aria-pressed',String(!!item.item_confirmed));button.setAttribute('aria-label',check.getAttribute('aria-label'));button.onclick=()=>{button.disabled=true;check.checked=!check.checked;check.onchange();};status.append(button);}else status.append(control); row.append(status);
           }
         }
       });
@@ -268,22 +275,26 @@
     if(layoutDraft.columns.some(col=>col.key===selectedSearch)) $('inventory-primary-search').value=selectedSearch;
     $('inventory-identifier').replaceChildren(new Option('No unique identifier',''),...layoutDraft.columns.filter(col=>!['location','quantity','notes'].includes(col.key)&&!['checkbox','buttons'].includes(col.type)).map(col=>new Option(col.label,col.key)));
     $('inventory-identifier').value=selectedIdentifier || '';
+    $('inventory-identifier').disabled=layoutDraft.stock_mode==='tv_counts';
+    $('inventory-identifier').closest('label').querySelector('small').textContent=layoutDraft.stock_mode==='tv_counts'?'TV rows are identified by Brand and Model together. Repeated models are flagged for review.':'Optional. An ID or serial identifies one item; repeated identifiers are skipped on import.';
     $('inventory-column-list').replaceChildren(...layoutDraft.columns.map((col,index)=>{
       const row=element('div','inventory-column-editor');row.dataset.columnKey=col.key;
       const name=element('label','', 'Column name');const input=element('input');input.value=col.label;input.maxLength=120;input.setAttribute('aria-label',`Column ${index+1} name`);input.onchange=()=>{col.label=input.value.trim();layoutDraft.primary_search=$('inventory-primary-search').value;layoutDraft.identifier=$('inventory-identifier').value;renderColumnEditor();};name.append(input);
-      const kind=element('label','', 'Control');const type=element('select');type.setAttribute('aria-label',`Control for ${col.label}`);[['text','Text box'],['checkbox','Checkbox'],['select','Dropdown'],['buttons','Button choices']].forEach(([value,label])=>type.append(new Option(label,value)));type.value=col.type;type.onchange=()=>{if(inventoryBaseFields.has(col.key)&&type.value!=='text'){col.key='custom_'+col.key;}col.type=type.value;renderColumnEditor();};kind.append(type);
+      const kind=element('label','', 'Control');const type=element('select');type.setAttribute('aria-label',`Control for ${col.label}`);[['text','Text box'],['checkbox','Checkbox'],['select','Dropdown'],['buttons','Button choices'],['count',col.minimum===0?'Count (0–50)':'Count (1–50)'],...(col.key==='location'?[['location','Imported locations']]:[]),...(col.type==='calculated'?[['calculated','Calculated total']]:[])].forEach(([value,label])=>type.append(new Option(label,value)));type.value=col.type;type.onchange=()=>{if(inventoryBaseFields.has(col.key)&&!(type.value==='text'||type.value==='count'&&col.key==='quantity'||type.value==='location'&&col.key==='location')){col.key='custom_'+col.key;}col.type=type.value;if(col.type==='count')col.minimum=col.minimum ?? 1;delete col.sources;if(col.key==='total_count'&&col.type!=='calculated')delete layoutDraft.stock_mode;renderColumnEditor();};kind.append(type);
       const filter=element('label','', 'Filter');const select=element('select');select.setAttribute('aria-label',`Filter for ${col.label}`);select.append(new Option('No filter','none'),new Option('Dropdown','dropdown'),new Option('Buttons','buttons'));select.value=col.filter;select.onchange=()=>{col.filter=select.value;};filter.append(select);
       const important=element('label','inventory-column-important');const check=element('input');check.type='checkbox';check.checked=col.important;check.onchange=()=>{col.important=check.checked;};important.append(check,element('span','','Important'));
       const choices=element('label','', 'Choices, separated by commas');const options=element('input');options.value=col.options.join(', ');options.setAttribute('aria-label',`Choices for ${col.label}`);options.oninput=()=>{col.options=options.value.split(',').map(x=>x.trim()).filter(Boolean);};choices.append(options);choices.hidden=!['select','buttons'].includes(col.type);
       const actions=element('div','inventory-column-actions');
       [['Up',-1],['Down',1]].forEach(([text,direction])=>{const button=element('button','quiet',text);button.type='button';button.disabled=index+direction<0||index+direction>=layoutDraft.columns.length;button.onclick=()=>{const target=index+direction;[layoutDraft.columns[index],layoutDraft.columns[target]]=[layoutDraft.columns[target],layoutDraft.columns[index]];renderColumnEditor();};actions.append(button);});
-      const remove=element('button','quiet','Delete column');remove.type='button';remove.setAttribute('aria-label',`Delete ${col.label} column`);remove.onclick=()=>{layoutDraft.columns.splice(index,1);renderColumnEditor();};actions.append(remove);row.append(name,kind,filter,important,choices,actions);return row;
+      const remove=element('button','quiet','Delete column');remove.type='button';remove.setAttribute('aria-label',`Delete ${col.label} column`);remove.onclick=()=>{layoutDraft.columns.splice(index,1);layoutDraft.columns.filter(column=>column.type==='calculated').forEach(column=>{column.sources=column.sources.filter(key=>key!==col.key);});layoutDraft.columns=layoutDraft.columns.filter(column=>column.type!=='calculated'||column.sources.length);if(layoutDraft.stock_mode==='tv_counts'&&!['brand','model','total_count'].every(key=>layoutDraft.columns.some(column=>column.key===key)))delete layoutDraft.stock_mode;renderColumnEditor();};actions.append(remove);row.append(name,kind,filter,important,choices,actions);return row;
     }));
   }
-  function openColumns({newName=null, importing=false}={}) {
+  function openColumns({newName=null, importing=false, template='custom'}={}) {
     layoutTarget=newName?{name:newName}:currentInventory();layoutAfterSave=(importing||newName)?()=> $('import-file').click():null;
-    layoutDraft=structuredClone(newName?{columns:[],primary_search:'',identifier:''}:layout());
-    $('inventory-column-preset').value='custom';$('inventory-new-column-name').value='';$('inventory-columns-error').hidden=true;
+    layoutDraft=structuredClone(newName?(inventoryTemplates.find(item=>item.id===template)?.layout || {columns:[],primary_search:'',identifier:''}):layout());
+    $('inventory-column-preset').replaceChildren(new Option('Custom columns','custom'),...inventoryTemplates.map(item=>new Option(item.name,item.id)));
+    const help=$('inventory-template-help')||element('p','dialog-intro');help.id='inventory-template-help';help.textContent=inventoryTemplates.find(item=>item.id===template)?.description || '';if(!help.isConnected)$('inventory-column-preset').closest('label').after(help);
+    $('inventory-column-preset').value=newName?template:(layout().template || 'custom');$('inventory-new-column-name').value='';$('inventory-columns-error').hidden=true;
     $('inventory-columns-title').textContent=newName?`Columns for ${newName}`:importing?'Step 1: choose inventory columns':'Choose columns and filters';
     $('save-inventory-columns').textContent=importing?'Next: choose import file':newName?'Create & choose import file':'Save columns';
     $('inventory-primary-search').replaceChildren();$('inventory-identifier').replaceChildren();renderColumnEditor();$('inventory-columns-dialog').showModal();
@@ -297,7 +308,7 @@
   };
   $('inventory-new-column-name').onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();$('inventory-add-column').click();}};
   $('inventory-column-preset').onchange=()=>{
-    const preset=$('inventory-column-preset').value;layoutDraft=structuredClone(preset==='scala'?scalaInventoryLayout:preset==='stock'?defaultInventoryLayout:{columns:[],primary_search:'',identifier:''});$('inventory-primary-search').replaceChildren();$('inventory-identifier').replaceChildren();renderColumnEditor();
+    const preset=$('inventory-column-preset').value;$('inventory-template-help').textContent=inventoryTemplates.find(item=>item.id===preset)?.description || '';layoutDraft=structuredClone(inventoryTemplates.find(item=>item.id===preset)?.layout || {columns:[],primary_search:'',identifier:''});$('inventory-primary-search').replaceChildren();$('inventory-identifier').replaceChildren();renderColumnEditor();
   };
   for(const id of ['close-inventory-columns','cancel-inventory-columns']) $(id).onclick=()=> $('inventory-columns-dialog').close();
   $('inventory-columns-form').onsubmit=async event=>{
@@ -309,7 +320,7 @@
     } catch(error){$('inventory-columns-error').textContent=error.message;$('inventory-columns-error').hidden=false;}
     finally{$('save-inventory-columns').disabled=false;}
   };
-  $('equipment-configure-columns').onclick=()=>openColumns();
+  $('equipment-configure-columns').onclick=async()=>{try{await inventoryTemplatesReady;openColumns();}catch(error){toast(error.message);}};
   function showFlaggedEquipment(event) {
     event?.preventDefault();
     customFilterValues.clear();
@@ -379,10 +390,16 @@
     equipmentForm.reset(); $('equipment-form-error').hidden = true;
     $('equipment-form-title').textContent = editingId ? 'Edit equipment' : 'Add equipment';
     $('save-equipment').textContent = editingId ? 'Save changes' : 'Save equipment';
-    if (item) fields.forEach(field => { equipmentForm.elements[field].value = item[field] ?? ''; });
-    fields.forEach(field=>{const input=equipmentForm.elements[field];input.closest('label').hidden=!displayColumns().some(col=>col.key===field);});
+    fields.forEach(field=>{const input=equipmentForm.elements[field];const label=input.closest('label');const col=displayColumns().find(col=>col.key===field);label.hidden=!col;if(!col){input.value=item?.[field] ?? '';return;}
+      const {wrapper,control}=inventoryInput(col,inventoryValue(item || {},field),{locations:locations()});control.id='equipment-'+field;control.name=field;
+      const oldWrapper=input.closest('.inventory-value-input');(oldWrapper || input).replaceWith(wrapper);
+      if(label.firstChild.nodeType===Node.TEXT_NODE)label.firstChild.textContent=col.label+' ';
+      if(col.type==='location'){const name=element('input');name.type='text';name.maxLength=120;name.placeholder='New storage location';name.setAttribute('aria-label','New storage location');name.hidden=true;const add=element('button','quiet','New location');add.type='button';add.onclick=()=>{if(name.hidden){name.hidden=false;add.textContent='Add location';name.focus();return;}if(name.value.trim()){control.add(new Option(name.value.trim(),name.value.trim()));control.value=name.value.trim();name.value='';name.hidden=true;add.textContent='New location';}};wrapper.append(name,add);}
+    });
     formCustomControls=new Map();
-    $('equipment-custom-fields').replaceChildren(...displayColumns().filter(col=>!inventoryBaseFields.has(col.key)).map(col=>{const group=element('div');group.append(element('span','',col.label));const {wrapper,control}=inventoryInput(col,inventoryValue(item || {},col.key));group.append(wrapper);formCustomControls.set(col.key,control);return group;}));
+    $('equipment-custom-fields').replaceChildren(...displayColumns().filter(col=>!inventoryBaseFields.has(col.key)).map(col=>{const group=element('div');group.append(element('span','',col.label));const initial=inventoryValue(item || {},col.key) || (col.type==='count'&&col.minimum===0?'0':'');const {wrapper,control}=inventoryInput(col,initial);group.append(wrapper);formCustomControls.set(col.key,control);return group;}));
+    const updateTotal=()=>{const row=inventoryCalculate({custom_values:Object.fromEntries([...formCustomControls].map(([key,input])=>[key,input.value]))},layout());displayColumns().filter(col=>col.type==='calculated').forEach(col=>{formCustomControls.get(col.key).value=inventoryValue(row,col.key);});};
+    formCustomControls.forEach((input,key)=>{if(displayColumns().some(col=>col.key===key&&col.type==='count'))input.onchange=updateTotal;});updateTotal();
     equipmentForm.dataset.originalCustom=JSON.stringify(item?.custom_values || {});
     $('equipment-dialog').showModal();
   }
@@ -399,8 +416,12 @@
   $('equipment-empty-add').onclick = () => openEquipment();
   $('equipment-refresh').onclick = () => loadEquipment();
   $('equipment-inventory-select').onchange = event => loadEquipment(Number(event.target.value));
-  function openInventoryForm(rename = false) {
+  async function openInventoryForm(rename = false) {
     if (!inventoryReady) return;
+    try{await inventoryTemplatesReady;}catch(error){toast(error.message);return;}
+    $('equipment-template-label').hidden=rename;
+    $('equipment-template').replaceChildren(...inventoryTemplates.map(item=>new Option(item.name,item.id)),new Option('Custom inventory','custom'));
+    const describe=()=>{$('equipment-template-description').textContent=inventoryTemplates.find(item=>item.id===$('equipment-template').value)?.description || 'Choose your own columns in the next step.';};$('equipment-template').onchange=describe;describe();
     renamingInventoryId = rename ? inventoryId : null;
     $('equipment-inventory-form').reset();
     $('equipment-inventory-name').value = rename ? currentInventory().name : '';
@@ -451,7 +472,7 @@
     event.preventDefault(); $('save-equipment-inventory').disabled = true;
     $('equipment-inventory-form-error').hidden = true;
     try {
-      if (!renamingInventoryId) {const name=$('equipment-inventory-name').value.trim();if(!name)throw new Error('Enter an inventory name.');$('equipment-inventory-dialog').close();openColumns({newName:name});return;}
+      if (!renamingInventoryId) {const name=$('equipment-inventory-name').value.trim();if(!name)throw new Error('Enter an inventory name.');$('equipment-inventory-dialog').close();openColumns({newName:name,template:$('equipment-template').value});return;}
       const inventory = await api(renamingInventoryId ? `/api/equipment/inventories/${renamingInventoryId}` : '/api/equipment/inventories', renamingInventoryId ? 'PUT' : 'POST', {name:$('equipment-inventory-name').value});
       $('equipment-inventory-dialog').close();
       await loadEquipment(inventory.id);
@@ -459,7 +480,8 @@
     } catch(error) { $('equipment-inventory-form-error').textContent = error.message; $('equipment-inventory-form-error').hidden = false; }
     finally { $('save-equipment-inventory').disabled = false; }
   };
-  $('equipment-import').onclick = () => openColumns({importing:true});
+  $('equipment-import').onclick = async () => {try{await inventoryTemplatesReady;openColumns({importing:true});}catch(error){toast(error.message);}};
+  $('equipment-show-zero').onchange=renderEquipment;
   for (const id of ['equipment-search','equipment-location-filter','equipment-review-filter']) $(id).addEventListener(id.endsWith('search') ? 'input' : 'change', renderEquipment);
   for (const [value, text] of [['','All items'], ['found','Located'], ['pending','Not located']]) {
     const button = element('button', 'choice-button', text); button.type = 'button';

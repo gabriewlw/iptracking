@@ -53,12 +53,12 @@ async function loadOverview() {
     $('overview-error').hidden = false;
   }
 }
-function updatePageSummary(equipmentItems, inventoryName) {
-  if (equipmentItems) equipmentPageSummary = {count:equipmentItems.length, locations:new Set(equipmentItems.map(item => item.location).filter(Boolean)).size, name:inventoryName};
+function updatePageSummary(equipmentItems, inventoryName, profile = {}) {
+  if (equipmentItems) equipmentPageSummary = {count:equipmentItems.length, locations:new Set(equipmentItems.map(item => item.location).filter(Boolean)).size, name:inventoryName,storage:profile.location_role!=='geographic'&&profile.location_role!=='none'&&!inventoryName?.toLowerCase().includes('scala')};
   $('workspace-page-title').textContent = currentTab === 'equipment' ? `Inventory${equipmentPageSummary ? ' · ' + equipmentPageSummary.name : ''}` : currentTab === 'iptv' ? 'IPTV' : 'AV Devices';
   if (currentTab === 'equipment') {
     $('workspace-page-summary').textContent = equipmentPageSummary
-      ? `${equipmentPageSummary.count} ${equipmentPageSummary.count === 1 ? 'item' : 'items'} across ${equipmentPageSummary.locations} ${equipmentPageSummary.locations === 1 ? 'location' : 'locations'}`
+      ? `${equipmentPageSummary.count} ${equipmentPageSummary.count === 1 ? 'item' : 'items'}${equipmentPageSummary.storage ? ` across ${equipmentPageSummary.locations} ${equipmentPageSummary.locations === 1 ? 'location' : 'locations'}` : ''}`
       : 'Loading inventory…';
   } else if (!networkLoaded) {
     $('workspace-page-summary').textContent = currentTab === 'iptv' ? 'Loading IPTV channels…' : 'Loading AV devices…';
@@ -804,9 +804,10 @@ const equipmentCheckFields = ['description','brand','model','serial_number','qua
 function equipmentIssues(row) {
   const profile=window.equipmentUI?.profile() || defaultInventoryLayout;
   const important=profile.columns.filter(col=>col.important&&col.key!=='orientation');
-  const issues=important.filter(col=>String(inventoryValue(row,col.key)).trim()==='').map(col=>`Missing ${col.label}`);
+  const issues=[...(row.source_issues || []),...important.filter(col=>String(inventoryValue(row,col.key)).trim()==='').map(col=>`Missing ${col.label}`)];
 
   profile.columns.filter(col=>['select','buttons'].includes(col.type)).forEach(col=>{const value=String(inventoryValue(row,col.key));if(value&&!col.options.some(option=>option.toLowerCase()===value.toLowerCase()))issues.push(`Check ${col.label}: ${value}`);});
+  profile.columns.filter(col=>col.type==='count').forEach(col=>{const value=String(inventoryValue(row,col.key)).trim();if(value&&(!/^\d+$/.test(value)||Number(value)<(col.minimum ?? 1)||Number(value)>50))issues.push(`Check ${col.label}: choose ${(col.minimum ?? 1)}–50`);});
   if (/[|;,\n]/.test(row.serial_number || '')) issues.push('Multiple serial numbers in one record');
   if (/separate inventory|not an itemized|reference to/i.test(row.notes || '')) issues.push('Inventory reference: check itemized source');
   return issues;
@@ -814,12 +815,13 @@ function equipmentIssues(row) {
 function orderEquipmentReview(entries) {
   const serialCounts = new Map();
   const profile=window.equipmentUI?.profile()||defaultInventoryLayout;const identifierCounts=new Map();
+  const rowIdentifier=row=>profile.stock_mode==='tv_counts'&&row.brand&&row.model?JSON.stringify([row.brand.trim().toLowerCase(),row.model.trim().toLowerCase()]):profile.identifier?String(inventoryValue(row,profile.identifier)).trim().toLowerCase():'';
   entries.forEach(({row}) => { const key = (row.serial_number || '').trim().toLowerCase(); if (key) serialCounts.set(key, (serialCounts.get(key) || 0) + 1); });
-  if(profile.identifier)entries.forEach(({row})=>{const value=String(inventoryValue(row,profile.identifier)).trim().toLowerCase();if(value)identifierCounts.set(value,(identifierCounts.get(value)||0)+1);});
+  entries.forEach(({row})=>{const value=rowIdentifier(row);if(value)identifierCounts.set(value,(identifierCounts.get(value)||0)+1);});
   const groups = new Map();
   entries.forEach(entry => {
     entry.issues = equipmentIssues(entry.row);
-    if(profile.identifier&&identifierCounts.get(String(inventoryValue(entry.row,profile.identifier)).trim().toLowerCase())>1)entry.issues.push('Repeated item identifier in this file');
+    if(identifierCounts.get(rowIdentifier(entry.row))>1)entry.issues.push('Repeated item identifier in this file');
     if (serialCounts.get((entry.row.serial_number || '').trim().toLowerCase()) > 1) entry.issues.push('Repeated serial number in this file');
     const location = entry.row.location || '';
     if (!groups.has(location)) groups.set(location, []);
@@ -877,7 +879,7 @@ function channelNotesWithCodec(row, codecIPs) {
   if (!codec || new RegExp(`\\b${codec.replace('.', '\\.')}\\b`, 'i').test(notes)) return notes;
   return notes ? `${notes} · ${codec}` : codec;
 }
-const customImportFields=()=> (spreadsheetInventory?.layout || window.equipmentUI?.profile() || defaultInventoryLayout).columns.map(col=>{const existing=equipmentImportFields.find(([key])=>key===col.key);return [col.key,col.label,[normalizedHeader(col.label),col.key.replaceAll('_',' '),...(existing?.[2] || [])]];});
+const customImportFields=()=> (spreadsheetInventory?.layout || window.equipmentUI?.profile() || defaultInventoryLayout).columns.filter(col=>col.type!=='calculated').map(col=>{const existing=equipmentImportFields.find(([key])=>key===col.key);return [col.key,col.label,[normalizedHeader(col.label),col.key.replaceAll('_',' '),...(col.aliases || []).map(normalizedHeader),...(existing?.[2] || [])]];});
 const importFields = () => currentTab === 'equipment' ? customImportFields() : currentTab === 'device'
   ? networkImportFields.filter(([field]) => ['venue','name','ip','vlan','notes'].includes(field))
   : iptvImportFields;
@@ -915,7 +917,7 @@ function mappedRows(applyVenueEdits = true) {
     if (currentTab === 'iptv') mapped.channel_source = channelSourceFromName(mapped.name);
     const field = currentTab === 'equipment' ? 'location' : 'venue';
     if (applyVenueEdits && venueEdits.has(mapped[field])) mapped[field] = venueEdits.get(mapped[field]);
-    return mapped;
+    if(currentTab==='equipment'){const profile=spreadsheetInventory?.layout || window.equipmentUI.profile();const calculated=inventoryCalculate(mapped,profile);calculated.source_issues=[];profile.columns.filter(col=>col.type==='calculated').forEach(col=>{const aliases=[col.label,...(col.aliases || [])].map(normalizedHeader);const index=spreadsheetData.headers.findIndex(header=>aliases.includes(normalizedHeader(header)));const original=index>=0?String(row[index] || '').trim():'';if(original!==''&&String(inventoryValue(calculated,col.key))!==original)calculated.source_issues.push(`Original ${col.label}: ${original}; calculated: ${inventoryValue(calculated,col.key) || 'unknown'}`);});return calculated;}return mapped;
   });
 }
 function showVenueEditors() {
@@ -950,7 +952,8 @@ function showSpreadsheetPreview() {
   $('equipment-import-audit').hidden = currentTab !== 'equipment';
   if (currentTab === 'equipment') {
     const entries = orderEquipmentReview(mappedRows().map((row,index) => ({row,number:spreadsheetData.row_numbers[index]})).filter(({row}) => meaningfulImportRow(row)));
-    $('equipment-import-audit').textContent = `${new Set(entries.map(entry => entry.row.location)).size} locations · ${entries.filter(entry => entry.issues.length).length} flagged rows. For each location, complete rows come first, then flagged rows. Storage position, condition, unit and source details are kept in Notes. This import starts with locations unconfirmed.`;
+    const profile=spreadsheetInventory.layout || defaultInventoryLayout;
+    $('equipment-import-audit').textContent = `${profile.stock_mode==='tv_counts'?entries.filter(entry=>entry.row.quantity===0).length+' zero-stock rows will be skipped':profile.location_role==='geographic'?entries.length+' device locations':new Set(entries.map(entry => entry.row.location)).size+' storage locations'} · ${entries.filter(entry => entry.issues.length).length} flagged rows. For each location, complete rows come first, then flagged rows. Storage position, condition, unit and source details are kept in Notes. This import starts with locations unconfirmed.`;
   }
   const rows = mappedRows();
   if (currentTab === 'iptv') {
@@ -998,7 +1001,7 @@ async function loadSpreadsheet() {
     $('sheet-choice').value = data.sheet;
     if(currentTab==='equipment')$('spreadsheet-title').textContent='Step 2: match file columns to your inventory';else $('spreadsheet-title').textContent='Match your columns';
     $('import-complete-options').hidden=currentTab!=='equipment';
-    $('spreadsheet-review-help').textContent=currentTab==='equipment' ? 'Match each inventory field to a file column. Complete matched rows can be added automatically. Review remaining rows together, grouped by location; edit their cells and import or skip selected rows. Scala uses its ID and does not require a serial number. Orientation is optional.' : 'Match each field to a column, or choose Leave blank. Missing columns and empty cells stay blank. Click Review rows, then choose Yes or Skip for each row.';
+    $('spreadsheet-review-help').textContent=currentTab==='equipment' ? 'Match each inventory field to a file column. Complete matched rows can be added automatically. Review remaining rows together, grouped by location; edit their cells and import or skip selected rows. Calculated totals need no file column. Zero-stock TV rows are skipped. Orientation is optional.' : 'Match each field to a column, or choose Leave blank. Missing columns and empty cells stay blank. Click Review rows, then choose Yes or Skip for each row.';
     $('spreadsheet-summary').textContent = `${spreadsheetFile.filename} · ${data.rows.length} records${spreadsheetInventory ? ' · Inventory: ' + spreadsheetInventory.name : ''}`;
     if (data.ignored_columns?.length) $('spreadsheet-summary').textContent += ` · Ignored columns: ${data.ignored_columns.join(', ')}`;
     $('column-mappings').replaceChildren(...importFields().map(([field, label, aliases]) => {
@@ -1176,12 +1179,13 @@ $('spreadsheet-form').onsubmit = async event => {
     const knownAddresses = new Set(saved.map(importAddressKey).filter(Boolean));
     let added = 0, existing = 0, skipped = 0, stopped = false;
     const equipmentImportReport = [];
+    if(tab==='equipment'&&spreadsheetInventory.layout?.stock_mode==='tv_counts'){const zeroRows=entries.filter(entry=>entry.row.quantity===0&&!entry.row.source_issues?.length);zeroRows.forEach(entry=>equipmentImportReport.push(`Row ${entry.number} · ${entry.row.brand} ${entry.row.model}: Zero total count; skipped. Use Add equipment to add this model later.`));skipped+=zeroRows.length;entries=entries.filter(entry=>entry.row.quantity!==0||entry.row.source_issues?.length);}
     if (tab === 'device') importWarnings = [];
     if (tab === 'equipment') {
       const profile=spreadsheetInventory.layout || defaultInventoryLayout;
       const collect=({entry,result})=>{
-        if(entry.issues.length||result.skipped||result.skippedRow) equipmentImportReport.push(`Row ${entry.number} · ${entry.row.location || 'Unassigned'} · ${inventoryValue(entry.row,profile.primary_search) || entry.row.serial_number || entry.row.model || entry.row.description || 'Unnamed item'}: ${result.skipped ? 'Already exists; not imported. ' : result.skippedRow ? 'Skipped by user. ' : 'Imported for follow-up. '}${entry.issues.join(' · ')}`);
-        if(result.skippedRow)skipped++;else {added+=result.added;existing+=result.skipped;}
+        if(entry.issues.length||result.skipped||result.skippedRow) equipmentImportReport.push(`Row ${entry.number} · ${entry.row.location || 'Unassigned'} · ${inventoryValue(entry.row,profile.primary_search) || entry.row.serial_number || entry.row.model || entry.row.description || 'Unnamed item'}: ${result.skipped_zero ? 'Zero total count; not imported. ' : result.skipped ? 'Already exists; not imported. ' : result.skippedRow ? 'Skipped by user. ' : 'Imported for follow-up. '}${entry.issues.join(' · ')}`);
+        if(result.skippedRow)skipped++;else {added+=result.added;skipped+=result.skipped_zero || 0;existing+=result.skipped-(result.skipped_zero || 0);}
       };
       for(let index=0;index<entries.length;) {
         if(stopSpreadsheetReview){stopped=true;break;}
@@ -1190,14 +1194,14 @@ $('spreadsheet-form').onsubmit = async event => {
         while(end<entries.length&&end<index+8&&entries[end].row.location===location)end++;
         const batch=entries.slice(index,end),remaining=[];
         for(const entry of batch) {
-          const complete=$('import-complete-rows').checked && !entry.issues.length && profile.columns.filter(column=>column.key!=='orientation').every(column=>$('map-'+column.key).value!==''&&String(inventoryValue(entry.row,column.key)).trim()!=='');
+          const complete=$('import-complete-rows').checked && !entry.issues.length && profile.columns.filter(column=>column.key!=='orientation'&&column.type!=='calculated').every(column=>$('map-'+column.key).value!==''&&String(inventoryValue(entry.row,column.key)).trim()!=='');
           if(!complete){remaining.push(entry);continue;}
           try {
             collect({entry,result:await api('/api/equipment/import','POST',{version:1,inventory_id:spreadsheetInventory.id,equipment:[entry.row]})});
           } catch(error) {entry.issues.push(error.message);remaining.push(entry);}
         }
         if(remaining.length) {
-          const review=await reviewEquipmentBatch(remaining,index,entries.length,spreadsheetInventory,importFields(),spreadsheetFile.filename);
+          const review=await reviewEquipmentBatch(remaining,index,entries.length,spreadsheetInventory,profile.columns.map(col=>[col.key,col.label]),spreadsheetFile.filename,[...new Set(entries.map(entry=>entry.row.location).filter(Boolean))]);
           review.outcomes.forEach(collect);
           if(review.stopped){stopped=true;break;}
         }

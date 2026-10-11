@@ -25,17 +25,37 @@ def validate_profile(value):
         if not isinstance(label,str) or not label.strip() or len(label.strip())>120 or label.strip().casefold() in labels:
             raise ValueError('Give each column a different name, from 1 to 120 characters.')
         kind, filtering, options = col.get('type','text'), col.get('filter','none'),col.get('options',[])
-        if kind not in ('text','select','checkbox','buttons') or filtering not in ('none','dropdown','buttons') or type(col.get('important',False)) is not bool:
+        if kind not in ('text','select','checkbox','buttons','count','location','calculated') or filtering not in ('none','dropdown','buttons') or type(col.get('important',False)) is not bool:
             raise ValueError('Choose valid column types, importance and filters.')
-        if not isinstance(options,list) or len(options)>30 or any(not isinstance(opt,str) or not opt.strip() or len(opt)>120 for opt in options):
-            raise ValueError('Choose up to 30 valid choices for a column.')
+        if not isinstance(options,list) or len(options)>50 or any(not isinstance(opt,str) or not opt.strip() or len(opt)>120 for opt in options):
+            raise ValueError('Choose up to 50 valid choices for a column.')
         options=[opt.strip() for opt in options]
         if len({opt.casefold() for opt in options})!=len(options) or (kind in ('select','buttons') and not options):
             raise ValueError('Choice columns need distinct nonempty choices.')
-        if key in BASE_FIELDS and kind!='text':
+        if kind=='location' and key!='location':
+            raise ValueError('Location choices must use the Location field.')
+        if key in BASE_FIELDS and kind not in ('text','count','location'):
             raise ValueError('Built-in fields use text inputs; add a custom column for choices.')
-        columns.append(dict(key=key,label=label.strip(),type=kind,important=col.get('important',False),filter=filtering,options=options))
+        column=dict(key=key,label=label.strip(),type=kind,important=col.get('important',False),filter=filtering,options=options)
+        if kind=='count':
+            if key in BASE_FIELDS and key!='quantity':raise ValueError('Only Quantity uses a built-in count dropdown.')
+            minimum=col.get('minimum',1)
+            if type(minimum) is not int or minimum not in (0,1):raise ValueError('Count dropdowns start at 0 or 1.')
+            column['minimum']=minimum
+        if kind=='calculated':
+            sources=col.get('sources')
+            if key in BASE_FIELDS or not isinstance(sources,list) or not sources or len(sources)>16 or any(not isinstance(source,str) for source in sources) or len(set(sources))!=len(sources):raise ValueError('Choose valid count columns to sum.')
+            column['sources']=sources
+        if 'aliases' in col:
+            aliases=col['aliases']
+            if not isinstance(aliases,list) or len(aliases)>20 or any(not isinstance(alias,str) or not alias.strip() or len(alias)>120 for alias in aliases):raise ValueError('Choose valid source column names.')
+            column['aliases']=[alias.strip() for alias in aliases]
+        columns.append(column)
         keys.add(key);labels.add(label.strip().casefold())
+    definitions={col['key']:col for col in columns}
+    for col in columns:
+        if col['type']=='calculated' and any(source not in definitions or source in BASE_FIELDS or definitions[source]['type']!='count' for source in col['sources']):
+            raise ValueError('Total counts must sum existing count dropdown columns.')
     primary,identifier=value.get('primary_search',columns[0]['key']),value.get('identifier','')
     if primary not in keys or (identifier and identifier not in keys):
         raise ValueError('Choose search and identifier columns from this inventory.')
@@ -46,6 +66,14 @@ def validate_profile(value):
         if type(value['show_status']) is not bool:
             raise ValueError('Choose whether to show location status.')
         result['show_status'] = value['show_status']
+    for key,allowed in {'location_role':('storage','geographic','none'),'stock_mode':('tv_counts',)}.items():
+        if key in value:
+            if value[key] not in allowed:raise ValueError('Invalid inventory template settings.')
+            result[key]=value[key]
+    if 'template' in value:
+        if not isinstance(value['template'],str) or not re.fullmatch(r'[a-z_]{1,30}',value['template']):raise ValueError('Invalid template name.')
+        result['template']=value['template']
+    if result.get('stock_mode')=='tv_counts' and (not {'brand','model','total_count'}.issubset(keys) or definitions.get('total_count',{}).get('type')!='calculated'):raise ValueError('TV inventories need Brand, Model and Total count. Remove the TV total before changing these columns.')
     return result
 
 
@@ -75,7 +103,14 @@ def custom_values(value,profile):
             if raw.casefold() not in choices:
                 raise ValueError(f'{col["label"]}: choose one of {", ".join(col["options"])} or leave blank.')
             raw=choices[raw.casefold()]
+        if col and col['type']=='count' and raw:
+            if not re.fullmatch(r'\d+',raw) or not col.get('minimum',1)<=int(raw)<=50:raise ValueError(f'{col["label"]}: choose a whole number from {col.get("minimum",1)} to 50.')
+            raw=str(int(raw))
         result[key]=raw
+    for col in definitions.values():
+        if col['type']=='calculated':
+            counts=[result.get(source,'') for source in col['sources']]
+            result[col['key']]=str(sum(int(count) for count in counts)) if all(count!='' for count in counts) else ''
     return result
 
 
@@ -84,5 +119,20 @@ def column_value(row,key):
 
 
 def profile_identifier(row,profile):
+    if profile.get('stock_mode')=='tv_counts':
+        return ('tv',row['brand'].strip().casefold(),row['model'].strip().casefold()) if row.get('brand') and row.get('model') else None
     value=column_value(row,profile['identifier']) if profile.get('identifier') else ''
     return str(value).strip().casefold() if value not in ('',None) else None
+
+
+def normalize_template_row(row, profile):
+    """Derive trusted totals and validate the built-in dropdown values."""
+    for col in profile['columns']:
+        if col['type']=='count' and col['key'] in BASE_FIELDS:
+            value=row.get(col['key'])
+            if value not in ('',None) and not col.get('minimum',1)<=int(value)<=50:
+                raise ValueError(f'{col["label"]}: choose a whole number from {col.get("minimum",1)} to 50.')
+    if profile.get('stock_mode')=='tv_counts':
+        total=row['custom_values'].get('total_count','')
+        row['quantity']=int(total) if total else None
+    return row

@@ -127,8 +127,8 @@ def reconcile(payload, inventory):
 
 def reconcile_profile(payload, inventory, profile):
     """Compare user-defined columns using their names and selected identifier."""
-    from inventory_profiles import column_value, custom_values, BASE_FIELDS
-    known=[norm(col['label']) for col in profile['columns']]
+    from inventory_profiles import column_value, custom_values, BASE_FIELDS, normalize_template_row, profile_identifier
+    known=[norm(alias) for col in profile['columns'] if col['type']!='calculated' for alias in [col['label'],*(col.get('aliases',[]))]]
     sheets=preview(dict(payload,sheets_only=True))['sheets'] if payload['filename'].lower().endswith('.xlsx') else ['']
     entries,errors=[],[]
     for sheet in sheets:
@@ -139,7 +139,7 @@ def reconcile_profile(payload, inventory, profile):
         headers=[re.sub(r'[_-]+',' ',h.lower()).strip() for h in data['headers']]
         mapping={}
         for col in profile['columns']:
-            aliases=[norm(col['label']),col['key'].replace('_',' '),*ALIASES.get(col['key'],())]
+            aliases=[norm(col['label']),col['key'].replace('_',' '),*ALIASES.get(col['key'],()),*[norm(alias) for alias in col.get('aliases',[])]]
             index=next((headers.index(alias) for alias in aliases if alias in headers),None)
             if col['key']=='location' and headers.count('location')>1:index=len(headers)-1-headers[::-1].index('location')
             mapping[col['key']]=index
@@ -150,23 +150,31 @@ def reconcile_profile(payload, inventory, profile):
             issues=[]
             for col in profile['columns']:
                 value=values[col['key']]
-                if col['important'] and not meaningful(value):issues.append('Missing '+col['label'])
+                if col['important'] and col['type']!='calculated' and not meaningful(value):issues.append('Missing '+col['label'])
                 if col['key']=='quantity':value=int(value) if re.fullmatch(r'\d+',value or '') else None
                 if col['key'] in BASE_FIELDS:row[col['key']]=value
                 else:row['custom_values'][col['key']]=value
-            try:row['custom_values']=custom_values(row['custom_values'],profile)
+            try:
+                row['custom_values']=custom_values(row['custom_values'],profile)
+                normalize_template_row(row,profile)
+                for col in profile['columns']:
+                    if col['type']=='calculated' and values[col['key']] and norm(values[col['key']])!=norm(column_value(row,col['key'])):
+                        issues.append(f'Original {col["label"]}: {values[col["key"]]}; calculated: {column_value(row,col["key"]) or "unknown"}')
             except ValueError as exc:issues.append(str(exc))
             entries.append({'sheet':sheet,'row_number':number,'record':row,'issues':issues,'details':{}})
             if len(entries)>10000:raise ValueError('Cross-check supports up to 10,000 source rows.')
     key=profile.get('identifier') or profile['primary_search']
-    counts=Counter(norm(column_value(entry['record'],key)) for entry in entries if column_value(entry['record'],key))
+    identity_for=lambda row: profile_identifier(row,profile) if profile.get('stock_mode')=='tv_counts' else norm(column_value(row,key))
+    counts=Counter(identity_for(entry['record']) for entry in entries if identity_for(entry['record']) and not (profile.get('stock_mode')=='tv_counts' and entry['record']['quantity']==0))
     used,results=set(),[]
     lookup={}
-    for item in inventory:lookup.setdefault(norm(column_value(item,key)),[]).append(item)
+    for item in inventory:lookup.setdefault(identity_for(item),[]).append(item)
     for entry in entries:
-        source=entry['record'];identity=norm(column_value(source,key))
+        source=entry['record'];identity=identity_for(source)
         candidates=lookup.get(identity,[]) if identity else []
         match=None;differences=[];status='missing'
+        if profile.get('stock_mode')=='tv_counts' and source['quantity']==0 and not entry['issues']:
+            results.append(dict(entry,status='matched',basis='Zero total count — intentionally skipped',saved_id=None,candidate_ids=[],differences=[],skipped_zero=True));continue
         if not identity:
             status='ambiguous';entry['issues'].append('Missing primary identifier; match manually')
         elif counts[identity]>1 or len(candidates)>1 or (candidates and candidates[0]['id'] in used):
